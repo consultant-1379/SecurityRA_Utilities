@@ -1,0 +1,63 @@
+#!/bin/bash
+# @(#) MT
+# @(#) cENM check for Charts
+# @(#) Version: 1.00 (09.06.2020)
+# @(#) Author: SuperGMario gianmario.rossi@ericsson.com and luca.ferrari@ericsson.com
+# @(#)         I am Mr "REM", I solve problems
+# Parameters:
+# $1 = director ip
+# $2 = namespace
+# $3 = deployment
+
+# Version     Date      Changes
+# -------  ----------   ------------------------------------------------------
+#  1.00    09/06/2020   First release 
+_RD='\033[0;31m'     # Red for "echo"
+_BL='\033[0;34m'     # Blue for "echo"
+_LG='\033[0;37m'     # Light Gray for "echo"
+_WH='\033[1;37m'     # White for "echo"
+_NC='\033[0m'        # Normal for "echo"
+
+installationPath=`pwd`
+
+directorIP=$1
+namespace=$2
+deployment=$3
+volume=$4
+
+echo -e "\n \n -------->   CHECKING $volume ARE BOUND"
+
+ssh -i ${deployment}.pem eccd@${directorIP} "kubectl get $volume -n $namespace -o wide" 2> /dev/null > ${installationPath}/log/${deployment}.${volume}.`echo $(date "+%Y%m%d")`.$$
+cat ${installationPath}/log/${deployment}.${volume}.`echo $(date "+%Y%m%d")`.$$ | grep -v 'NAME' > /tmp/PVCPV.$$
+#read -u 2 -p "wait" OK         for debug
+pvcpv=$(wc -l /tmp/PVCPV.$$ | awk '{ print $1 }')
+if [ "$pvcpv" -gt 0 ]; then
+    bound_pvcpv=$(cat /tmp/PVCPV.$$ | grep -c Bound)
+    not_bound_pvcpv=$(cat /tmp/PVCPV.$$ | grep -c -v Bound)
+    if [ "$not_bound_pvcpv" -gt 0 ]; then
+        echo -e "\n ${_RD} These $volume are not bound ${_NC} \n"
+        cat /tmp/PVCPV.$$ | grep -v Bound
+    else
+        echo -e "\n all the $volume are bound"
+    fi
+    echo -e "\n $bound_pvcpv $volume on $pvcpv are in bound state"
+else
+    echo -e "\n \n ${_RD} no $volume for this deployment${_NC}"
+    rm -f /tmp/PVCPV.$$
+    exit 1
+fi
+
+rm -f /tmp/PVCPV.$$
+exit 0
+
+
+
+
+#kubectl get pods -o wide -n enm33 | grep -v Completed | awk '{ print $1 }' > /tmp/notCompletedPod.$$
+
+#while read LINE; do
+#    kubectl describe pods $LINE -n $namespace | grep True
+#    if [] ; then
+#        echo "Pod $LINE is not in ready state"
+#    fi
+#done < /tmp/notCompletedPod.$$

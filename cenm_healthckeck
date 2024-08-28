@@ -1,0 +1,75 @@
+#!/bin/bash
+# @(#) MT
+# @(#) Health Checks script for Main Track cENM
+# @(#) Version: 1.00 (09.06.2020)
+# @(#) Author: SuperGMario gianmario.rossi@ericsson.com and luca.ferrari@ericsson.com
+# @(#)         I am Mr "REM", I solve problems
+# Parameters:
+# $1 = what should I do :-) 
+# $2 = "SpeedUp" (only when option $1 equal "HC", to bypass NETSIM check)
+
+# Version     Date      Changes
+# -------  ----------   ------------------------------------------------------
+#  1.00    09/06/2020   First release 
+_RD='\033[0;31m'     # Red for "echo"
+_BL='\033[0;34m'     # Blue for "echo"
+_LG='\033[0;37m'     # Light Gray for "echo"
+_WH='\033[1;37m'     # White for "echo"
+_NC='\033[0m'        # Normal for "echo"
+
+
+
+installationPath=`pwd`
+deployment=$1
+PythonScript=$installationPath/pylibs/retrieve_maintrack_openstack_deployment_details_new.py
+
+ScreenLog=${installationPath}/log/${deployment}.`echo $(date "+%Y%m%d")`.$$
+#rm -f ${ScreenLog}*
+exec > >(tee ${ScreenLog}) # capture screen stdout
+
+
+if [ -z "$deployment" ] ; then
+    echo "Please specify deployment name (the name of the deployment in DIT)"
+    exit 1
+fi
+
+cenm_directorIP=${cenm_directorIP:-"NULL"}
+cenm_workloadIP=${cenm_workloadIP:-"NULL"}
+cenm_namespace=${cenm_namespace:-"NULL"}
+privateKey=${privateKey:-"NULL"}
+
+cenm_directorIP=$(python ${PythonScript} -c ${deployment} -di -r 2> /dev/null)
+cenm_namespace=$(python ${PythonScript} -c ${deployment} -dn -r 2> /dev/null)
+cenm_workloadIP=$(python ${PythonScript} -c ${deployment} -w -r 2> /dev/null)
+privateKey=$(python ${PythonScript} -c ${deployment} -k -r 2> /dev/null)
+echo "${privateKey}" > $installationPath/${deployment}.pem
+chmod 600 $installationPath/${deployment}.pem
+
+#checking the ssh connection with director
+
+ssh -q -i ${deployment}.pem eccd@${cenm_directorIP} exit
+
+if [ $? -ne 0 ] ; then
+    echo "Something not working with ssh connection with director please check:"
+    echo -e "\n 1) you run the script as root user"
+    echo -e "\n 2) you have connection towards director IP ${cenm_directorIP}"
+    echo -e "\n 3) your enviroment is correctly setup in DIT; the script is retrieving pem key, director IP and enm namespace from there"
+    exit 1
+fi
+
+echo "------------------------ Health check is starting ----------------------------"
+
+
+$installationPath/check_charts $cenm_directorIP $cenm_namespace $deployment
+$installationPath/check_nodes $cenm_directorIP $deployment
+$installationPath/check_pods $cenm_directorIP $cenm_namespace $deployment
+volume=pvc
+$installationPath/check_pvcpv $cenm_directorIP $cenm_namespace $deployment $volume
+volume=pv
+$installationPath/check_pvcpv $cenm_directorIP $cenm_namespace $deployment $volume
+$installationPath/check_UI $deployment
+
+#rm -f ${deployment}.pem
+
+
+echo -e "\n \n------------------------ Health check is completed ----------------------------"

@@ -1,0 +1,69 @@
+#!/bin/bash
+# deleteme
+# @(#) MT
+# @(#) cENM check for PODs
+# @(#) Version: 1.00 (09.06.2020)
+# @(#) Author: SuperGMario gianmario.rossi@ericsson.com and luca.ferrari@ericsson.com
+# @(#)         I am Mr "REM", I solve problems
+# Parameters:
+# $1 = director ip 
+# $2 = namespace
+# $3 = deployment
+
+# Version     Date      Changes
+# -------  ----------   ------------------------------------------------------
+#  1.00    09/06/2020   First release 
+_RD='\033[0;31m'     # Red for "echo"
+_BL='\033[0;34m'     # Blue for "echo"
+_LG='\033[0;37m'     # Light Gray for "echo"
+_WH='\033[1;37m'     # White for "echo"
+_NC='\033[0m'        # Normal for "echo"
+
+installationPath=`pwd`
+
+directorIP=$1
+namespace=$2
+deployment=$3
+
+echo -e "\n \n -------->   CHECKING PODS IN RUNNING STATE"
+
+#ssh -i ${deployment}.pem eccd@${directorIP} "kubectl get pods -o wide -n $namespace | grep -v 'NAME'" 2> /dev/null > /tmp/Pods.$$ 
+ssh -i ${deployment}.pem eccd@${directorIP} "kubectl get pods -o wide -n $namespace" 2> /dev/null > ${installationPath}/log/${deployment}.Pods.`echo $(date "+%Y%m%d")`.$$
+cat ${installationPath}/log/${deployment}.Pods.`echo $(date "+%Y%m%d")`.$$ | grep -v 'NAME' > /tmp/Pods.$$
+pods=$(wc -l /tmp/Pods.$$ | awk '{ print $1 }')
+if [ "$pods" -gt 0 ]; then
+    running_pods=$(cat /tmp/Pods.$$ | grep -c Running)
+    not_running_pods=$(cat /tmp/Pods.$$ | grep -c -v Running)
+    if [ "$not_running_pods" -gt 0 ]; then
+        echo -e "\n ${_RD} These PODS are not in running state ${_NC} \n"
+        cat /tmp/Pods.$$ | grep -v Running
+    else
+        echo -e "\n all the Pods are in running state \n"
+    fi
+    echo -e "\n $running_pods pods on $pods are in running state"
+else
+    echo -e "\n \n no pods are present for this deployment"
+    rm -f /tmp/Pods.$$
+    exit 1
+fi
+
+echo -e "\n \n -------->   CHECKING CONTAINER IN READY STATE"
+
+container=0
+while read LINE; do
+    ready=`echo ${LINE} | grep -v Completed | awk '{print $2}' | awk -F/ '{print $1}'`
+    total=`echo ${LINE} | grep -v Completed | awk '{print $2}' | awk -F/ '{print $2}'`
+    if [ -n "$ready" ] && [ -n "$total" ] && [ $ready -ne $total ] ; then
+        echo -e "\n \n ${_RD} SOME CONTAINER IS NOT READY ON THIS POD ${_NC} \n"
+        echo "$LINE"
+        container=1
+    fi
+done < /tmp/Pods.$$
+
+
+if [ "$container" -eq 0 ] ; then
+    echo -e "\n \n All containers in the PODS are in ready state"  
+fi
+
+rm -f /tmp/Pods.$$
+exit 0

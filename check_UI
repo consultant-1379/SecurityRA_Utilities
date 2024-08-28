@@ -1,0 +1,36 @@
+#!/bin/bash
+# @(#) MT
+# @(#) cENM check for Charts
+# @(#) Version: 1.00 (09.06.2020)
+# @(#) Author: SuperGMario gianmario.rossi@ericsson.com and luca.ferrari@ericsson.com
+# @(#)         I am Mr "REM", I solve problems
+# Parameters:
+# $1 = director ip
+# $2 = namespace
+# $3 = deployment
+
+# Version     Date      Changes
+# -------  ----------   ------------------------------------------------------
+#  1.00    09/06/2020   First release 
+_RD='\033[0;31m'     # Red for "echo"
+_BL='\033[0;34m'     # Blue for "echo"
+_LG='\033[0;37m'     # Light Gray for "echo"
+_WH='\033[1;37m'     # White for "echo"
+_NC='\033[0m'        # Normal for "echo"
+
+installationPath=`pwd`
+
+deployment=$1
+
+URL=${deployment}.athtem.eei.ericsson.se
+
+echo -e "\n \n -------->   CHECKING IF UI $URL  IS REACHEABLE"
+
+timeout 60 curl -k --location --no-buffer --silent --trace-ascii ${LOG} --trace-time ${URL} > /dev/null
+return_code=$?
+if [ ${return_code} -eq 0 ]; then
+    echo -e "\n ${URL} is Ok"
+else
+    echo "\n ${URL} has problems (return_code=${return_code})"
+fi
+exit 0

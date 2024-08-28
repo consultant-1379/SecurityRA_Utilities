@@ -1,0 +1,113 @@
+#!/bin/bash
+# @(#) MT
+# @(#) cENM check for nodes
+# @(#) Version: 1.00 (09.06.2020)
+# @(#) Author: SuperGMario gianmario.rossi@ericsson.com and luca.ferrari@ericsson.com
+# @(#)         I am Mr "REM", I solve problems
+# Parameters:
+# $1 = directorIP 
+# $2 = deployment
+
+# Version     Date      Changes
+# -------  ----------   ------------------------------------------------------
+#  1.00    09/06/2020   First release 
+_RD='\033[0;31m'     # Red for "echo"
+_BL='\033[0;34m'     # Blue for "echo"
+_LG='\033[0;37m'     # Light Gray for "echo"
+_WH='\033[1;37m'     # White for "echo"
+_NC='\033[0m'        # Normal for "echo"
+
+installationPath=`pwd`
+
+directorIP=$1
+deployment=$2
+
+echo -e "\n \n -------->   CHECKING NODES IN READY STATE"
+
+ssh -i ${deployment}.pem eccd@${directorIP} "kubectl get nodes -o wide" 2> /dev/null > ${installationPath}/log/${deployment}.nodes.`echo $(date "+%Y%m%d")`.$$
+cat ${installationPath}/log/${deployment}.nodes.`echo $(date "+%Y%m%d")`.$$ | grep -v 'NAME' > /tmp/Nodes.$$
+nodes=$(wc -l /tmp/Nodes.$$ | awk '{ print $1 }')
+if [ "$nodes" -gt 0 ]; then
+    ready_nodes=$(cat /tmp/Nodes.$$ | grep -c Ready)
+    not_ready_nodes=$(cat /tmp/Nodes.$$ | grep -c -v Ready)
+    if [ "$not_ready_nodes" -gt 0 ]; then
+        echo -e "\n ${_RD} These Nodes are not in ready state ${_NC} \n"
+        cat /tmp/Nodes.$$ | grep -v Ready
+    else
+        echo -e "\n all the Nodes are in ready state"
+    fi
+    echo -e "\n $ready_nodes nodes on $nodes are in ready state"
+
+echo -e "\n \n -------->   CHECKING NODES FILE SYSTEM USAGE AND KUBELET & DOCKER SERVICE STATUS"
+
+    service=0
+    usageCount=0
+    while read LINE; do
+        Node=`echo ${LINE} | awk '{print $1}'`
+        echo " ----------------------------------- ${Node} ----------------------------------------- \n \n" >> ${installationPath}/log/${deployment}.nodes-details.`echo $(date "+%Y%m%d")`.$$
+        IntIP=`echo ${LINE} | awk '{print $6}'`
+        ssh -n -i ${deployment}.pem eccd@${directorIP} "ssh -o StrictHostKeyCHecking=no ${IntIP} 'systemctl status kubelet; systemctl status docker; df -kh /'" 2> /dev/null | tee /tmp/$Node.$$ >> ${installationPath}/log/${deployment}.nodes-details.`echo $(date "+%Y%m%d")`.$$
+#        read -u 2 -p "wait" OK                                                                     //debug line
+        active=$(cat /tmp/$Node.$$ | grep '(running)' | grep -c active)
+        usage=$(tail -1 /tmp/$Node.$$ | awk '{ print $5 }')
+        intusage=$(echo "${usage::-1}")
+        if [ $active -ne 2 ] ; then
+            echo -e "\n \n ${_RD} $Node has problem with kubelet or docker serivices  ${_NC}"
+            kubelet=$(cat /tmp/$Node.$$ |  grep Active | head -1)
+            docker=$(cat /tmp/$Node.$$ | grep Active | tail -1)
+            echo -e "\n KUBELET service state \n $kubelet \n DOCKER service state \n $docker \n"
+            let "service += 1"
+        fi
+        if [ $intusage -gt 75 ] ; then
+            echo -e "\n ${_RD} $Node has filesystem usage over threshold ($usage)  ${_NC} \n"
+            let "usageCount += 1"
+        fi
+        rm -f /tmp/$Node.$$
+    done < /tmp/Nodes.$$
+    if [ $usageCount -gt 0 ] ; then
+        echo -e "\n $usageCount nodes has filesystem usage over threshold \n"
+    else
+        echo -e "\n File system usage is under threshold"
+    fi
+    if [ $service -gt 0 ] ; then
+        echo -e "\n $service nodes has one of kubelet or docker service no active \n"
+    else    
+        echo -e "\n Kubelet and Docker service are actvie and running"    
+    fi
+else
+    echo -e "\n \n ${_RD} no nodes are present for this container platform${_NC}"
+    rm -f /tmp/Nodes.$$
+    exit 1
+fi
+rm -f /tmp/Nodes.$$
+
+echo -e "\n \n -------->   CHECKING IF NODES HAVE CPU OR RAM SPIKE "
+
+#ssh -i ${deployment}.pem eccd@${directorIP} "kubectl top nodes | grep -v 'NAME'" 2> /dev/null > /tmp/TopNodes.$$
+ssh -i ${deployment}.pem eccd@${directorIP} "kubectl top nodes" 2> /dev/null > ${installationPath}/log/${deployment}.topnodes.`echo $(date "+%Y%m%d")`.$$
+cat ${installationPath}/log/${deployment}.topnodes.`echo $(date "+%Y%m%d")`.$$ | grep -v 'NAME' > /tmp/TopNodes.$$
+
+
+spike=0
+while read LINE; do
+    CPUx=`echo ${LINE} | awk '{print $3}'`
+    RAMx=`echo ${LINE} | awk '{print $5}'`
+    CPU=$(echo "${CPUx::-1}")
+    RAM=$(echo "${RAMx::-1}")
+    if [ $CPU -gt 85 ] || [ $RAM -gt 85 ] ; then
+        echo -e "\n \n ${_RD} THIS NODE HAS A CPU OR RAM SPIKE ${_NC} \n"
+        echo "$LINE"
+        spike=1
+    fi
+done < /tmp/TopNodes.$$
+
+if [ "$spike" -eq 0 ] ; then
+    echo -e "\n No RAM and CPU spike detected"  
+fi
+
+rm -f /tmp/TopNodes.$$
+
+exit 0
+
+
+
